@@ -15,7 +15,7 @@ if 'data' not in st.session_state:
     st.session_state['processed'] = False
 
 # Upload data file
-st.title('Keyword Clustering with Combined SERP Similarity')
+st.title('Keyword Clustering with Weighted SERP Overlap')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -30,8 +30,8 @@ if uploaded_file:
     url_col = st.selectbox('Select the SERP URL column:', data.columns)
     title_col = st.selectbox('Select the Title column:', data.columns)
     
-    # Minimum similarity score input
-    similarity_threshold = st.slider('Set the minimum SERP similarity score (0 to 1):', min_value=0.0, max_value=1.0, value=0.5)
+    # Weighted overlap threshold input
+    weighted_threshold = st.slider('Set the minimum weighted overlap score for clustering:', min_value=1.0, max_value=10.0, value=3.0)
     
     # Button to start processing
     if st.button('Run Clustering'):
@@ -67,28 +67,41 @@ if uploaded_file:
         for kw in data[keyword_col].unique():
             G.add_node(kw)
         
-        # Add edges based on combined score of SERP vector similarity and URL overlap
+        # Add edges based on weighted overlap and SERP vector similarity
         num_keywords = len(data[keyword_col].unique())
         for i, keyword1 in enumerate(data[keyword_col].unique()):
-            urls1 = set(data[data[keyword_col] == keyword1][url_col].values.flatten())
-            serp_vector1 = data[data[keyword_col] == keyword1]['serp_vector'].values[0]
+            keyword1_data = data[data[keyword_col] == keyword1]
+            urls1 = keyword1_data[url_col].values.flatten()
+            positions1 = keyword1_data[position_col].values.flatten()
+            serp_vector1 = keyword1_data['serp_vector'].values[0]
             
             for j, keyword2 in enumerate(data[keyword_col].unique()):
                 if i < j:
-                    urls2 = set(data[data[keyword_col] == keyword2][url_col].values.flatten())
-                    serp_vector2 = data[data[keyword_col] == keyword2]['serp_vector'].values[0]
+                    keyword2_data = data[data[keyword_col] == keyword2]
+                    urls2 = keyword2_data[url_col].values.flatten()
+                    positions2 = keyword2_data[position_col].values.flatten()
+                    serp_vector2 = keyword2_data['serp_vector'].values[0]
                     
-                    # Calculate the overlap (number of common URLs)
-                    overlap_count = len(urls1.intersection(urls2))
+                    # Calculate weighted overlap score
+                    overlap_score = 0
+                    for url, pos1 in zip(urls1, positions1):
+                        if url in urls2:
+                            pos2 = positions2[list(urls2).index(url)]
+                            if pos1 in range(1, 4) and pos2 in range(1, 4):
+                                overlap_score += 3  # High weight for positions 1-3
+                            elif pos1 in range(4, 7) and pos2 in range(4, 7):
+                                overlap_score += 2  # Medium weight for positions 4-6
+                            elif pos1 in range(7, 11) and pos2 in range(7, 11):
+                                overlap_score += 1  # Low weight for positions 7-10
                     
                     # Calculate SERP vector similarity
                     serp_similarity = np.dot(serp_vector1, serp_vector2) / (np.linalg.norm(serp_vector1) * np.linalg.norm(serp_vector2))
                     
-                    # Combined score: use overlap count and SERP similarity
-                    combined_score = overlap_count + serp_similarity
+                    # Combined score: sum of weighted overlap and SERP similarity
+                    combined_score = overlap_score + serp_similarity
                     
-                    # Add edge if the similarity meets the threshold
-                    if serp_similarity >= similarity_threshold and overlap_count > 0:
+                    # Add edge if the combined score meets the threshold
+                    if combined_score >= weighted_threshold:
                         G.add_edge(keyword1, keyword2, weight=combined_score)
             
             # Update progress
@@ -117,7 +130,7 @@ if uploaded_file:
             st.session_state['data'] = data
             st.session_state['processed'] = True
         else:
-            st.write('No clusters formed. Adjust the similarity threshold or input data.')
+            st.write('No clusters formed. Adjust the weighted overlap threshold or input data.')
             st.session_state['processed'] = False
 
     # Display the results if processed
