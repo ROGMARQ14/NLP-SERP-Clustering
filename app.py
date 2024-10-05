@@ -49,8 +49,17 @@ if uploaded_file:
     # Add cluster labels to the data
     data['cluster'] = data[keyword_col].map(partition)
     
+    # Rename clusters based on the highest impression keyword
+    cluster_names = {}
+    for cluster_id in data['cluster'].unique():
+        cluster_data = data[data['cluster'] == cluster_id]
+        top_keyword = cluster_data.loc[cluster_data[impression_col].idxmax(), keyword_col]
+        cluster_names[cluster_id] = top_keyword
+        
+    data['cluster_name'] = data['cluster'].map(cluster_names)
+    
     # Display the results
-    st.write('Clustered keywords:', data[[keyword_col, impression_col, 'cluster']])
+    st.write('Clustered keywords:', data[[keyword_col, impression_col, 'cluster_name']])
     
     # Download the clustered keywords as a CSV file
     st.download_button(
