@@ -5,6 +5,8 @@ import networkx as nx
 from fuzzywuzzy import process
 from community import community_louvain
 from sentence_transformers import SentenceTransformer
+from sklearn.decomposition import LatentDirichletAllocation
+from sklearn.feature_extraction.text import CountVectorizer
 
 # Initialize the model for title similarity
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -15,7 +17,7 @@ if 'data' not in st.session_state:
     st.session_state['processed'] = False
 
 # Upload data file
-st.title('Keyword Clustering Based on Search Intent')
+st.title('Keyword Clustering with LDA and SERP Overlap')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -54,6 +56,18 @@ if uploaded_file:
 
         data['serp_vector'] = data.apply(vectorize_serp, axis=1)
         
+        # Extract topics using LDA on SERP titles
+        vectorizer = CountVectorizer(stop_words='english')
+        title_matrix = vectorizer.fit_transform(data[title_col])
+        
+        lda = LatentDirichletAllocation(n_components=5, random_state=42)  # Using 5 topics as an example
+        lda_topics = lda.fit_transform(title_matrix)
+        
+        # Add topic distributions to the DataFrame
+        topic_columns = [f'topic_{i}' for i in range(lda_topics.shape[1])]
+        lda_df = pd.DataFrame(lda_topics, columns=topic_columns)
+        data = pd.concat([data.reset_index(drop=True), lda_df], axis=1)
+        
         # Update progress
         progress_bar.progress(40)
         
@@ -64,13 +78,14 @@ if uploaded_file:
         for kw in data[keyword_col].unique():
             G.add_node(kw)
         
-        # Add edges based on automatic weighted overlap and SERP similarity
+        # Add edges based on weighted overlap, SERP similarity, and topic similarity
         num_keywords = len(data[keyword_col].unique())
         for i, keyword1 in enumerate(data[keyword_col].unique()):
             keyword1_data = data[data[keyword_col] == keyword1]
             urls1 = keyword1_data[url_col].values.flatten()
             positions1 = keyword1_data[position_col].values.flatten()
             serp_vector1 = keyword1_data['serp_vector'].values[0]
+            topic_dist1 = keyword1_data[topic_columns].values[0]
             
             for j, keyword2 in enumerate(data[keyword_col].unique()):
                 if i < j:
@@ -78,6 +93,7 @@ if uploaded_file:
                     urls2 = keyword2_data[url_col].values.flatten()
                     positions2 = keyword2_data[position_col].values.flatten()
                     serp_vector2 = keyword2_data['serp_vector'].values[0]
+                    topic_dist2 = keyword2_data[topic_columns].values[0]
                     
                     # Calculate weighted overlap score
                     overlap_score = 0
@@ -94,11 +110,14 @@ if uploaded_file:
                     # Calculate SERP vector similarity
                     serp_similarity = np.dot(serp_vector1, serp_vector2) / (np.linalg.norm(serp_vector1) * np.linalg.norm(serp_vector2))
                     
-                    # Combined score: sum of weighted overlap and SERP similarity
-                    combined_score = overlap_score + serp_similarity
+                    # Calculate topic distribution similarity (cosine similarity)
+                    topic_similarity = np.dot(topic_dist1, topic_dist2) / (np.linalg.norm(topic_dist1) * np.linalg.norm(topic_dist2))
                     
-                    # Add edge based on combined score
-                    if combined_score > 0:  # Automatically determine edges with positive combined scores
+                    # Combined score: sum of weighted overlap, SERP similarity, and topic similarity
+                    combined_score = overlap_score + serp_similarity + topic_similarity
+                    
+                    # Add edge if the combined score is positive
+                    if combined_score > 0:
                         G.add_edge(keyword1, keyword2, weight=combined_score)
             
             # Update progress
