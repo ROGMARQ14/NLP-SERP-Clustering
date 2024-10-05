@@ -20,9 +20,9 @@ if uploaded_file:
     # Data preprocessing (lowercase keywords)
     data['Keyword'] = data['Keyword'].str.lower()
     
-    # Embedding keywords and their titles (excluding URLs)
+    # Embedding keywords and titles (excluding URLs)
     def embed_keywords_and_titles(row):
-        # Combine keyword and title for embedding, excluding URL
+        # Combine keyword and title for embedding
         text = f"{row['Keyword']} {row['Title']}"
         return model.encode(text)
 
@@ -69,7 +69,7 @@ if uploaded_file:
     final_clusters = pd.concat(clustered_keywords, ignore_index=True)
     
     # Display the final clustered and deduplicated keywords
-    st.write('Clustered and deduplicated keywords:', final_clusters[['cluster_name', 'Keyword', 'Impr', 'Position', 'URL']])
+    st.write('Clustered and deduplicated keywords:', final_clusters[['cluster_name', 'Keyword', 'Impr', 'Position', 'Title', 'URL']])
     
     # Allow user to download the clustered results as a CSV
     st.download_button(
