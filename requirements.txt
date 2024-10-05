@@ -5,4 +5,4 @@ networkx
 scikit-learn
 fuzzywuzzy
 python-Levenshtein
-community
+python-louvain
