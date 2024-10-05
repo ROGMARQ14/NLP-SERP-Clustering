@@ -15,7 +15,7 @@ if 'data' not in st.session_state:
     st.session_state['processed'] = False
 
 # Upload data file
-st.title('Enhanced Keyword Clustering with Overlap Threshold and SERP Vectorization')
+st.title('Keyword Clustering with Combined SERP Similarity')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -30,8 +30,8 @@ if uploaded_file:
     url_col = st.selectbox('Select the SERP URL column:', data.columns)
     title_col = st.selectbox('Select the Title column:', data.columns)
     
-    # Overlap threshold input
-    overlap_threshold = st.slider('Set the minimum number of overlapping URLs:', min_value=1, max_value=10, value=3)
+    # Minimum similarity score input
+    similarity_threshold = st.slider('Set the minimum SERP similarity score (0 to 1):', min_value=0.0, max_value=1.0, value=0.5)
     
     # Button to start processing
     if st.button('Run Clustering'):
@@ -67,7 +67,7 @@ if uploaded_file:
         for kw in data[keyword_col].unique():
             G.add_node(kw)
         
-        # Add edges based on SERP URL overlap and SERP vector similarity
+        # Add edges based on combined score of SERP vector similarity and URL overlap
         num_keywords = len(data[keyword_col].unique())
         for i, keyword1 in enumerate(data[keyword_col].unique()):
             urls1 = set(data[data[keyword_col] == keyword1][url_col].values.flatten())
@@ -78,14 +78,18 @@ if uploaded_file:
                     urls2 = set(data[data[keyword_col] == keyword2][url_col].values.flatten())
                     serp_vector2 = data[data[keyword_col] == keyword2]['serp_vector'].values[0]
                     
-                    # SERP overlap calculation with a threshold
-                    overlap_urls = urls1.intersection(urls2)
-                    if len(overlap_urls) >= overlap_threshold:
-                        # SERP vector similarity
-                        serp_similarity = np.dot(serp_vector1, serp_vector2) / (np.linalg.norm(serp_vector1) * np.linalg.norm(serp_vector2))
-                        
-                        # Add edge with weight based on similarity
-                        G.add_edge(keyword1, keyword2, weight=serp_similarity)
+                    # Calculate the overlap (number of common URLs)
+                    overlap_count = len(urls1.intersection(urls2))
+                    
+                    # Calculate SERP vector similarity
+                    serp_similarity = np.dot(serp_vector1, serp_vector2) / (np.linalg.norm(serp_vector1) * np.linalg.norm(serp_vector2))
+                    
+                    # Combined score: use overlap count and SERP similarity
+                    combined_score = overlap_count + serp_similarity
+                    
+                    # Add edge if the similarity meets the threshold
+                    if serp_similarity >= similarity_threshold and overlap_count > 0:
+                        G.add_edge(keyword1, keyword2, weight=combined_score)
             
             # Update progress
             progress_bar.progress(40 + int((i / num_keywords) * 40))
@@ -113,7 +117,7 @@ if uploaded_file:
             st.session_state['data'] = data
             st.session_state['processed'] = True
         else:
-            st.write('No clusters formed. Try lowering the overlap threshold.')
+            st.write('No clusters formed. Adjust the similarity threshold or input data.')
             st.session_state['processed'] = False
 
     # Display the results if processed
