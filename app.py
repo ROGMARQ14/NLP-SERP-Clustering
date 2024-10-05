@@ -1,110 +1,58 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.cluster import DBSCAN, AgglomerativeClustering, KMeans
-from sentence_transformers import SentenceTransformer
-from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-
-# Initialize the model
-model = SentenceTransformer('all-MiniLM-L6-v2')
+import networkx as nx
+from sklearn.feature_extraction.text import CountVectorizer
+from fuzzywuzzy import process
+from community import community_louvain
 
 # Upload data file
-st.title('Keyword Clustering Based on Search Intent')
+st.title('Keyword Clustering with SERP Overlap')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
     # Load data
     data = pd.read_csv(uploaded_file)
-    st.write('Sample data:', data.head())
     
     # Field mapping
     keyword_col = st.selectbox('Select the Keyword column:', data.columns)
-    impression_col = st.selectbox('Select the Impression column:', data.columns)
-    position_col = st.selectbox('Select the Position column:', data.columns)
-    title_col = st.selectbox('Select the Title column:', data.columns)
+    url_cols = [col for col in data.columns if 'URL' in col]
     
-    # Data preprocessing (lowercase keywords)
-    data[keyword_col] = data[keyword_col].str.lower()
+    # Fuzzy Matching to clean keywords
+    unique_keywords = data[keyword_col].unique()
+    keyword_mapping = {kw: process.extractOne(kw, unique_keywords)[0] for kw in unique_keywords}
+    data[keyword_col] = data[keyword_col].apply(lambda x: keyword_mapping[x])
     
-    # Embedding keywords and their SERP titles using Sentence Transformers
-    def embed_keywords_and_titles(row):
-        # Combine keyword and its search result title for embedding
-        text = f"{row[keyword_col]} {row[title_col]}"
-        return model.encode(text)
-
-    data['embedding'] = data.apply(embed_keywords_and_titles, axis=1)
-    embeddings = np.vstack(data['embedding'].values)
+    # Create a graph where nodes are keywords
+    G = nx.Graph()
     
-    # Clustering options
-    clustering_method = st.selectbox('Choose a clustering method:', ['DBSCAN', 'Agglomerative', 'KMeans'])
+    # Add nodes
+    for kw in data[keyword_col].unique():
+        G.add_node(kw)
     
-    if clustering_method == 'DBSCAN':
-        eps = st.slider('Select epsilon (eps) for DBSCAN:', 0.1, 1.0, 0.5)
-        min_samples = st.slider('Select minimum samples for DBSCAN:', 1, 10, 2)
-        clustering = DBSCAN(eps=eps, min_samples=min_samples, metric='cosine').fit(embeddings)
+    # Add edges based on SERP URL overlap
+    for i, keyword1 in enumerate(data[keyword_col].unique()):
+        urls1 = set(data[data[keyword_col] == keyword1][url_cols].values.flatten())
+        for j, keyword2 in enumerate(data[keyword_col].unique()):
+            if i < j:
+                urls2 = set(data[data[keyword_col] == keyword2][url_cols].values.flatten())
+                overlap = len(urls1.intersection(urls2))
+                if overlap > 0:
+                    G.add_edge(keyword1, keyword2, weight=overlap)
     
-    elif clustering_method == 'Agglomerative':
-        n_clusters = st.slider('Select number of clusters for Agglomerative Clustering:', 2, 50, 10)
-        clustering = AgglomerativeClustering(n_clusters=n_clusters, affinity='cosine', linkage='average').fit(embeddings)
+    # Apply Louvain community detection
+    partition = community_louvain.best_partition(G, weight='weight')
     
-    elif clustering_method == 'KMeans':
-        n_clusters = st.slider('Select number of clusters for KMeans:', 2, 50, 10)
-        clustering = KMeans(n_clusters=n_clusters, random_state=0).fit(embeddings)
+    # Add cluster labels to the data
+    data['cluster'] = data[keyword_col].map(partition)
     
-    # Assign cluster labels
-    data['cluster'] = clustering.labels_
+    # Display the results
+    st.write('Clustered keywords:', data[[keyword_col, 'cluster']])
     
-    # Function to de-dupe keywords with high SERP similarity
-    def deduplicate_keywords(cluster_data):
-        # Calculate SERP similarity within the cluster using cosine similarity
-        serp_embeddings = np.vstack(cluster_data['embedding'].values)
-        similarity_matrix = cosine_similarity(serp_embeddings)
-        
-        # Identify duplicates (high similarity) and retain the keyword with the highest impressions
-        retained_keywords = []
-        for i, row in cluster_data.iterrows():
-            if all(row[keyword_col] not in rk[keyword_col] for rk in retained_keywords):
-                similar_indices = np.where(similarity_matrix[i] > 0.9)[0]
-                similar_keywords = cluster_data.iloc[similar_indices]
-                # Pick the one with the highest impression
-                best_keyword = similar_keywords.loc[similar_keywords[impression_col].idxmax()]
-                retained_keywords.append(best_keyword)
-        return pd.DataFrame(retained_keywords)
-
-    # Apply deduplication within clusters
-    clustered_keywords = []
-    for cluster in data['cluster'].unique():
-        if cluster == -1:  # Noise points, skip them
-            continue
-        cluster_data = data[data['cluster'] == cluster]
-        deduped_cluster = deduplicate_keywords(cluster_data)
-        clustered_keywords.append(deduped_cluster)
-
-    # Concatenate all clusters
-    final_clusters = pd.concat(clustered_keywords, ignore_index=True)
-    
-    # Display the clustered results
-    st.write('Clustered and deduplicated keywords:', final_clusters[[keyword_col, impression_col, 'cluster']])
-    
-    # Visualization of embeddings
-    st.write('Visualizing clusters...')
-    pca = PCA(n_components=2)
-    reduced_embeddings = pca.fit_transform(embeddings)
-    
-    plt.figure(figsize=(10, 6))
-    scatter = plt.scatter(reduced_embeddings[:, 0], reduced_embeddings[:, 1], c=data['cluster'], cmap='viridis', alpha=0.6)
-    plt.title('Keyword Embeddings Cluster Visualization')
-    plt.xlabel('PCA Component 1')
-    plt.ylabel('PCA Component 2')
-    plt.colorbar(scatter, label='Cluster')
-    st.pyplot(plt)
-
     # Download the clustered keywords as a CSV file
     st.download_button(
         label="Download clustered keywords",
-        data=final_clusters.to_csv(index=False),
+        data=data.to_csv(index=False),
         file_name='clustered_keywords.csv',
         mime='text/csv'
     )
