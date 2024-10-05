@@ -20,16 +20,16 @@ if uploaded_file:
     # Data preprocessing (lowercase keywords)
     data['Keyword'] = data['Keyword'].str.lower()
     
-    # Embedding keywords and their SERP results using Sentence Transformers
-    def embed_keywords_and_serps(row):
-        # Combine keyword and its search result information for embedding
-        text = f"{row['Keyword']} {row['Title']} {row['URL']}"
+    # Embedding keywords and their titles (excluding URLs)
+    def embed_keywords_and_titles(row):
+        # Combine keyword and title for embedding, excluding URL
+        text = f"{row['Keyword']} {row['Title']}"
         return model.encode(text)
 
-    data['embedding'] = data.apply(embed_keywords_and_serps, axis=1)
+    data['embedding'] = data.apply(embed_keywords_and_titles, axis=1)
     embeddings = np.vstack(data['embedding'].values)
     
-    # Clustering using DBSCAN (or other clustering method)
+    # Clustering using DBSCAN
     clustering = DBSCAN(eps=0.5, min_samples=2, metric='cosine').fit(embeddings)
     data['cluster'] = clustering.labels_
 
@@ -57,13 +57,18 @@ if uploaded_file:
             continue
         cluster_data = data[data['cluster'] == cluster]
         deduped_cluster = deduplicate_keywords(cluster_data)
+        
+        # Set cluster name to the highest impression keyword
+        cluster_name = deduped_cluster.loc[deduped_cluster['Impr'].idxmax(), 'Keyword']
+        deduped_cluster['cluster_name'] = cluster_name
+        
         clustered_keywords.append(deduped_cluster)
 
     # Concatenate all clusters
     final_clusters = pd.concat(clustered_keywords, ignore_index=True)
     
     # Display the clustered results
-    st.write('Clustered and deduplicated keywords:', final_clusters[['Keyword', 'Impr', 'cluster']])
+    st.write('Clustered and deduplicated keywords:', final_clusters[['cluster_name', 'Keyword', 'Impr', 'Position', 'URL']])
     
     # Download the clustered keywords as a CSV file
     st.download_button(
