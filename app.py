@@ -130,11 +130,25 @@ if uploaded_file:
             # Add cluster labels to the data
             data['cluster'] = data[keyword_col].map(partition)
             
-            # Rename clusters based on the highest impression keyword
+            # Rename clusters based on most relevant keyword
             cluster_names = {}
             for cluster_id in data['cluster'].unique():
                 cluster_data = data[data['cluster'] == cluster_id]
-                top_keyword = cluster_data.loc[cluster_data[impression_col].idxmax(), keyword_col]
+                keywords_in_cluster = cluster_data[keyword_col].values
+                
+                # Calculate relevance within cluster by averaging combined scores
+                avg_similarities = []
+                for keyword1 in keywords_in_cluster:
+                    avg_similarity = 0
+                    count = 0
+                    for keyword2 in keywords_in_cluster:
+                        if keyword1 != keyword2 and G.has_edge(keyword1, keyword2):
+                            avg_similarity += G[keyword1][keyword2]['weight']
+                            count += 1
+                    avg_similarities.append((keyword1, avg_similarity / count if count > 0 else 0))
+                
+                # Select keyword with highest average similarity
+                top_keyword = max(avg_similarities, key=lambda x: x[1])[0]
                 cluster_names[cluster_id] = top_keyword
                 
             data['cluster_name'] = data['cluster'].map(cluster_names)
