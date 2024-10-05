@@ -91,29 +91,33 @@ if uploaded_file:
             progress_bar.progress(40 + int((i / num_keywords) * 40))
         
         # Apply Louvain community detection
-        partition = community_louvain.best_partition(G, weight='weight')
-        
-        # Add cluster labels to the data
-        data['cluster'] = data[keyword_col].map(partition)
-        
-        # Rename clusters based on the highest impression keyword
-        cluster_names = {}
-        for cluster_id in data['cluster'].unique():
-            cluster_data = data[data['cluster'] == cluster_id]
-            top_keyword = cluster_data.loc[cluster_data[impression_col].idxmax(), keyword_col]
-            cluster_names[cluster_id] = top_keyword
+        if len(G.edges) > 0:  # Ensure there are edges in the graph before partitioning
+            partition = community_louvain.best_partition(G, weight='weight')
             
-        data['cluster_name'] = data['cluster'].map(cluster_names)
-        
-        # Update progress
-        progress_bar.progress(100)
-        
-        # Store processed data in session state
-        st.session_state['data'] = data
-        st.session_state['processed'] = True
+            # Add cluster labels to the data
+            data['cluster'] = data[keyword_col].map(partition)
+            
+            # Rename clusters based on the highest impression keyword
+            cluster_names = {}
+            for cluster_id in data['cluster'].unique():
+                cluster_data = data[data['cluster'] == cluster_id]
+                top_keyword = cluster_data.loc[cluster_data[impression_col].idxmax(), keyword_col]
+                cluster_names[cluster_id] = top_keyword
+                
+            data['cluster_name'] = data['cluster'].map(cluster_names)
+            
+            # Update progress
+            progress_bar.progress(100)
+            
+            # Store processed data in session state
+            st.session_state['data'] = data
+            st.session_state['processed'] = True
+        else:
+            st.write('No clusters formed. Try lowering the overlap threshold.')
+            st.session_state['processed'] = False
 
     # Display the results if processed
-    if st.session_state['processed']:
+    if st.session_state['processed'] and 'cluster_name' in st.session_state['data'].columns:
         st.write('Clustered keywords:', st.session_state['data'][[keyword_col, impression_col, 'cluster_name']])
         
         # Download the clustered keywords as a CSV file
@@ -123,3 +127,5 @@ if uploaded_file:
             file_name='clustered_keywords.csv',
             mime='text/csv'
         )
+    elif not st.session_state['processed']:
+        st.write('No clusters formed or processing not yet run.')
