@@ -6,4 +6,4 @@ scikit-learn
 fuzzywuzzy
 python-Levenshtein
 python-louvain
-SentenceTransformer
+sentence-transformers
