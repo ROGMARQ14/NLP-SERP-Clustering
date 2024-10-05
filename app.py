@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import networkx as nx
-from sklearn.feature_extraction.text import CountVectorizer
 from fuzzywuzzy import process
 from community import community_louvain
 
@@ -16,9 +15,13 @@ if uploaded_file:
     
     # Field mapping
     keyword_col = st.selectbox('Select the Keyword column:', data.columns)
-    url_cols = [col for col in data.columns if 'URL' in col]
+    impression_col = st.selectbox('Select the Impression column:', data.columns)
+    url_cols = st.multiselect('Select the SERP URL columns:', [col for col in data.columns if 'URL' in col])
     
-    # Fuzzy Matching to clean keywords
+    # Deduplicate exact keyword matches by keeping the one with the highest impressions
+    data = data.sort_values(by=impression_col, ascending=False).drop_duplicates(subset=keyword_col, keep='first')
+
+    # Fuzzy Matching to clean similar keywords
     unique_keywords = data[keyword_col].unique()
     keyword_mapping = {kw: process.extractOne(kw, unique_keywords)[0] for kw in unique_keywords}
     data[keyword_col] = data[keyword_col].apply(lambda x: keyword_mapping[x])
@@ -47,7 +50,7 @@ if uploaded_file:
     data['cluster'] = data[keyword_col].map(partition)
     
     # Display the results
-    st.write('Clustered keywords:', data[[keyword_col, 'cluster']])
+    st.write('Clustered keywords:', data[[keyword_col, impression_col, 'cluster']])
     
     # Download the clustered keywords as a CSV file
     st.download_button(
