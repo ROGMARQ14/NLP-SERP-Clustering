@@ -15,7 +15,7 @@ if 'data' not in st.session_state:
     st.session_state['processed'] = False
 
 # Upload data file
-st.title('Keyword Clustering with Weighted SERP Overlap')
+st.title('Keyword Clustering Based on Search Intent')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -29,9 +29,6 @@ if uploaded_file:
     position_col = st.selectbox('Select the Position column:', data.columns)
     url_col = st.selectbox('Select the SERP URL column:', data.columns)
     title_col = st.selectbox('Select the Title column:', data.columns)
-    
-    # Weighted overlap threshold input
-    weighted_threshold = st.slider('Set the minimum weighted overlap score for clustering:', min_value=1.0, max_value=10.0, value=3.0)
     
     # Button to start processing
     if st.button('Run Clustering'):
@@ -67,7 +64,7 @@ if uploaded_file:
         for kw in data[keyword_col].unique():
             G.add_node(kw)
         
-        # Add edges based on weighted overlap and SERP vector similarity
+        # Add edges based on automatic weighted overlap and SERP similarity
         num_keywords = len(data[keyword_col].unique())
         for i, keyword1 in enumerate(data[keyword_col].unique()):
             keyword1_data = data[data[keyword_col] == keyword1]
@@ -100,8 +97,8 @@ if uploaded_file:
                     # Combined score: sum of weighted overlap and SERP similarity
                     combined_score = overlap_score + serp_similarity
                     
-                    # Add edge if the combined score meets the threshold
-                    if combined_score >= weighted_threshold:
+                    # Add edge based on combined score
+                    if combined_score > 0:  # Automatically determine edges with positive combined scores
                         G.add_edge(keyword1, keyword2, weight=combined_score)
             
             # Update progress
@@ -130,7 +127,7 @@ if uploaded_file:
             st.session_state['data'] = data
             st.session_state['processed'] = True
         else:
-            st.write('No clusters formed. Adjust the weighted overlap threshold or input data.')
+            st.write('No clusters formed. Input data may need to be adjusted.')
             st.session_state['processed'] = False
 
     # Display the results if processed
