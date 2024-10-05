@@ -26,20 +26,21 @@ if uploaded_file:
         text = f"{row['Keyword']} {row['Title']}"
         return model.encode(text)
 
+    # Generate embeddings for each row
     data['embedding'] = data.apply(embed_keywords_and_titles, axis=1)
     embeddings = np.vstack(data['embedding'].values)
     
-    # Clustering using DBSCAN
+    # Clustering using DBSCAN (based on cosine similarity)
     clustering = DBSCAN(eps=0.5, min_samples=2, metric='cosine').fit(embeddings)
     data['cluster'] = clustering.labels_
 
-    # Function to de-dupe keywords with high SERP similarity
+    # Function to deduplicate keywords within clusters based on SERP similarity
     def deduplicate_keywords(cluster_data):
-        # Calculate SERP similarity within the cluster using cosine similarity
+        # Calculate similarity within the cluster
         serp_embeddings = np.vstack(cluster_data['embedding'].values)
         similarity_matrix = cosine_similarity(serp_embeddings)
         
-        # Identify duplicates (high similarity) and retain the keyword with the highest impressions
+        # Identify and retain keywords with the highest impressions in cases of high similarity
         retained_keywords = []
         for i, row in cluster_data.iterrows():
             if all(row['Keyword'] not in rk['Keyword'] for rk in retained_keywords):
@@ -50,27 +51,27 @@ if uploaded_file:
                 retained_keywords.append(best_keyword)
         return pd.DataFrame(retained_keywords)
 
-    # Apply deduplication within clusters
+    # Apply deduplication within each cluster
     clustered_keywords = []
     for cluster in data['cluster'].unique():
-        if cluster == -1:  # Noise points, skip them
+        if cluster == -1:  # Skip noise points
             continue
         cluster_data = data[data['cluster'] == cluster]
         deduped_cluster = deduplicate_keywords(cluster_data)
         
-        # Set cluster name to the highest impression keyword
+        # Set the cluster name to the keyword with the highest impressions
         cluster_name = deduped_cluster.loc[deduped_cluster['Impr'].idxmax(), 'Keyword']
         deduped_cluster['cluster_name'] = cluster_name
         
         clustered_keywords.append(deduped_cluster)
 
-    # Concatenate all clusters
+    # Combine all clusters into a final DataFrame
     final_clusters = pd.concat(clustered_keywords, ignore_index=True)
     
-    # Display the clustered results
+    # Display the final clustered and deduplicated keywords
     st.write('Clustered and deduplicated keywords:', final_clusters[['cluster_name', 'Keyword', 'Impr', 'Position', 'URL']])
     
-    # Download the clustered keywords as a CSV file
+    # Allow user to download the clustered results as a CSV
     st.download_button(
         label="Download clustered keywords",
         data=final_clusters.to_csv(index=False),
