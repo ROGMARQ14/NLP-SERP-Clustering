@@ -4,9 +4,13 @@ import numpy as np
 import networkx as nx
 from fuzzywuzzy import process
 from community import community_louvain
+from sentence_transformers import SentenceTransformer
+
+# Initialize the model for title similarity
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 # Upload data file
-st.title('Keyword Clustering with SERP Overlap')
+st.title('Enhanced Keyword Clustering with SERP Overlap and Titles')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -16,7 +20,9 @@ if uploaded_file:
     # Field mapping
     keyword_col = st.selectbox('Select the Keyword column:', data.columns)
     impression_col = st.selectbox('Select the Impression column:', data.columns)
+    position_col = st.selectbox('Select the Position column:', data.columns)
     url_cols = st.multiselect('Select the SERP URL columns:', [col for col in data.columns if 'URL' in col])
+    title_col = st.selectbox('Select the Title column:', data.columns)
     
     # Deduplicate exact keyword matches by keeping the one with the highest impressions
     data = data.sort_values(by=impression_col, ascending=False).drop_duplicates(subset=keyword_col, keep='first')
@@ -26,6 +32,9 @@ if uploaded_file:
     keyword_mapping = {kw: process.extractOne(kw, unique_keywords)[0] for kw in unique_keywords}
     data[keyword_col] = data[keyword_col].apply(lambda x: keyword_mapping[x])
     
+    # Embed titles for semantic similarity
+    data['title_embedding'] = data[title_col].apply(lambda x: model.encode(x))
+
     # Create a graph where nodes are keywords
     G = nx.Graph()
     
@@ -33,15 +42,28 @@ if uploaded_file:
     for kw in data[keyword_col].unique():
         G.add_node(kw)
     
-    # Add edges based on SERP URL overlap
+    # Add edges based on SERP URL overlap and title similarity
     for i, keyword1 in enumerate(data[keyword_col].unique()):
         urls1 = set(data[data[keyword_col] == keyword1][url_cols].values.flatten())
+        title_embedding1 = data[data[keyword_col] == keyword1]['title_embedding'].values[0]
         for j, keyword2 in enumerate(data[keyword_col].unique()):
             if i < j:
                 urls2 = set(data[data[keyword_col] == keyword2][url_cols].values.flatten())
-                overlap = len(urls1.intersection(urls2))
-                if overlap > 0:
-                    G.add_edge(keyword1, keyword2, weight=overlap)
+                title_embedding2 = data[data[keyword_col] == keyword2]['title_embedding'].values[0]
+                
+                # SERP overlap calculation with position weighting
+                positions1 = data[data[keyword_col] == keyword1][position_col].values[0]
+                positions2 = data[data[keyword_col] == keyword2][position_col].values[0]
+                overlap = sum([1 / (pos1 + pos2) for url, pos1, pos2 in zip(urls1.intersection(urls2), positions1, positions2)])
+                
+                # Semantic similarity of titles
+                title_similarity = np.dot(title_embedding1, title_embedding2) / (np.linalg.norm(title_embedding1) * np.linalg.norm(title_embedding2))
+                
+                # Total weight: combine overlap and title similarity
+                total_weight = overlap + title_similarity
+                
+                if total_weight > 0:
+                    G.add_edge(keyword1, keyword2, weight=total_weight)
     
     # Apply Louvain community detection
     partition = community_louvain.best_partition(G, weight='weight')
