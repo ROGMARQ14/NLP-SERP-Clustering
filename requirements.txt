@@ -2,6 +2,7 @@ streamlit
 pandas
 numpy
 networkx
-sklearn
+scikit-learn
 fuzzywuzzy
-python-louvain
+python-Levenshtein
+community
