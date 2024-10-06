@@ -13,7 +13,7 @@ if 'data' not in st.session_state:
     st.session_state['processed'] = False
 
 # Upload data file
-st.title('Keyword Clustering Focused on SERP Overlap')
+st.title('Keyword Clustering Based on SERP Overlap')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -28,13 +28,11 @@ if uploaded_file:
     url_col = st.selectbox('Select the SERP URL column:', data.columns)
     title_col = st.selectbox('Select the Title column:', data.columns)
 
-    # SERP overlap threshold input
-    overlap_threshold = 3  # Fixed overlap threshold for top 5 results
-
     # Button to start processing
     if st.button('Run Clustering'):
         # Initialize progress bar and message
         num_unique_keywords = len(data[keyword_col].unique())
+        total_keywords = num_unique_keywords
         st.session_state['processed'] = False
         progress_message = st.empty()  # For updating the progress message
         progress_bar = st.progress(0)
@@ -46,7 +44,7 @@ if uploaded_file:
 
         # Iterate over all unique keyword sets to form clusters
         for i in range(0, len(data), 10):  # Process in batches of 10 rows
-            current_keyword_set = data.iloc[i:i+10]
+            current_keyword_set = data.iloc[i:i + 10]
             current_keyword = current_keyword_set[keyword_col].values[0]
 
             # Skip if the current keyword is already processed
@@ -55,23 +53,23 @@ if uploaded_file:
 
             # Form a new cluster with the current keyword set
             new_cluster = [current_keyword_set]
-            current_keyword_urls = current_keyword_set[url_col].values[:5]  # Top 5 URLs
+            current_keyword_urls = current_keyword_set[url_col].values[:10]  # Top 10 URLs
 
             # Compare to the remaining unprocessed keywords
             for j in range(i + 10, len(data), 10):
-                other_keyword_set = data.iloc[j:j+10]
+                other_keyword_set = data.iloc[j:j + 10]
                 other_keyword = other_keyword_set[keyword_col].values[0]
 
                 # Skip if this keyword is already processed
                 if other_keyword in processed_keywords:
                     continue
 
-                other_keyword_urls = other_keyword_set[url_col].values[:5]
+                other_keyword_urls = other_keyword_set[url_col].values[:10]
 
-                # Calculate overlap in top 5 URLs
+                # Calculate overlap in top 10 URLs
                 overlap_count = len(set(current_keyword_urls) & set(other_keyword_urls))
 
-                if overlap_count > overlap_threshold:
+                if overlap_count > 3:
                     new_cluster.append(other_keyword_set)
                     processed_keywords.add(other_keyword)
 
@@ -87,11 +85,11 @@ if uploaded_file:
 
             new_cluster = list(unique_keywords_in_cluster.values())
 
-            # Remove exact matches in top 5 SERP results within the cluster
+            # Remove exact matches in top 10 SERP results within the cluster
             keywords_to_remove = set()
             seen_serp_signatures = {}
             for keyword_set in new_cluster:
-                serp_signature = tuple(sorted(keyword_set[url_col].values[:5]))  # Top 5 SERP results in any order
+                serp_signature = tuple(sorted(keyword_set[url_col].values[:10]))  # Top 10 SERP results in any order
                 if serp_signature in seen_serp_signatures:
                     if seen_serp_signatures[serp_signature][impression_col].sum() < keyword_set[impression_col].sum():
                         keywords_to_remove.add(seen_serp_signatures[serp_signature][keyword_col].values[0])
@@ -124,16 +122,17 @@ if uploaded_file:
 
             # Update progress
             keyword_sets_processed += 1
-            progress_percent = min(int((keyword_sets_processed / (num_unique_keywords / 10)) * 100), 100)
+            remaining_keywords = total_keywords - len(processed_keywords)
+            progress_percent = min(int((keyword_sets_processed / total_keywords) * 100), 100)
             progress_bar.progress(progress_percent)
-            progress_message.text(f"Keywords: {num_unique_keywords}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
+            progress_message.text(f"Keywords left: {remaining_keywords}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
 
         # Convert clusters into a final DataFrame
         final_cluster_df = pd.concat([pd.concat(cluster) for cluster in clusters])
         
         # Final progress update
         progress_bar.progress(100)
-        progress_message.text(f"Keywords: {num_unique_keywords}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
+        progress_message.text(f"Keywords left: {total_keywords - len(processed_keywords)}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
 
         # Store processed data in session state
         st.session_state['data'] = final_cluster_df
