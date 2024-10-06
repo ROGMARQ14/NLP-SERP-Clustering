@@ -42,6 +42,9 @@ if uploaded_file:
         duplicates_removed = 0
         keyword_sets_processed = 0
 
+        # **Remove duplicates within the initial data (keep only one set of 10 per keyword)**
+        data = data.drop_duplicates(subset=[keyword_col]).reset_index(drop=True)
+
         # Iterate over all unique keyword sets to form clusters
         for i in range(0, len(data), 10):  # Process in batches of 10 rows
             current_keyword_set = data.iloc[i:i + 10]
@@ -72,18 +75,6 @@ if uploaded_file:
                 if overlap_count > 3:
                     new_cluster.append(other_keyword_set)
                     processed_keywords.add(other_keyword)
-
-            # Deduplicate within the new cluster
-            unique_keywords_in_cluster = {}
-            for keyword_set in new_cluster:
-                kw = keyword_set[keyword_col].values[0]
-                if kw in unique_keywords_in_cluster:
-                    if unique_keywords_in_cluster[kw][impression_col].sum() < keyword_set[impression_col].sum():
-                        unique_keywords_in_cluster[kw] = keyword_set  # Keep the higher impression set
-                else:
-                    unique_keywords_in_cluster[kw] = keyword_set
-
-            new_cluster = list(unique_keywords_in_cluster.values())
 
             # Remove exact matches in top 10 SERP results within the cluster
             keywords_to_remove = set()
