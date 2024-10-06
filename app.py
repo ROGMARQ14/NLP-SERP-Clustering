@@ -5,8 +5,6 @@ import networkx as nx
 from fuzzywuzzy import process
 from community import community_louvain
 from sentence_transformers import SentenceTransformer
-from sklearn.decomposition import LatentDirichletAllocation
-from sklearn.feature_extraction.text import CountVectorizer
 
 # Initialize the model for title similarity
 model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -17,7 +15,7 @@ if 'data' not in st.session_state:
     st.session_state['processed'] = False
 
 # Upload data file
-st.title('Keyword Clustering with LDA and SERP Overlap')
+st.title('Keyword Clustering Focused on SERP Overlap')
 uploaded_file = st.file_uploader("Upload your keyword CSV file", type=['csv'])
 
 if uploaded_file:
@@ -31,6 +29,9 @@ if uploaded_file:
     position_col = st.selectbox('Select the Position column:', data.columns)
     url_col = st.selectbox('Select the SERP URL column:', data.columns)
     title_col = st.selectbox('Select the Title column:', data.columns)
+    
+    # SERP overlap threshold input
+    overlap_threshold = st.slider('Set the minimum number of overlapping top URLs for clustering:', min_value=1, max_value=10, value=3)
     
     # Button to start processing
     if st.button('Run Clustering'):
@@ -48,26 +49,9 @@ if uploaded_file:
         keyword_mapping = {kw: process.extractOne(kw, unique_keywords)[0] for kw in unique_keywords}
         data[keyword_col] = data[keyword_col].apply(lambda x: keyword_mapping[x])
         
-        # Vectorize keywords with their SERP titles
-        def vectorize_serp(row):
-            # Concatenate keyword with all its related SERP titles
-            serp_text = row[keyword_col] + " " + " ".join(row[title_col].split(';'))  # Assuming titles are semicolon-separated
-            return model.encode(serp_text)
+        # Vectorize keywords with their SERP titles (optional, can be removed if focusing strictly on SERP overlap)
+        data['serp_vector'] = data[title_col].apply(lambda x: model.encode(x))
 
-        data['serp_vector'] = data.apply(vectorize_serp, axis=1)
-        
-        # Extract topics using LDA on SERP titles
-        vectorizer = CountVectorizer(stop_words='english')
-        title_matrix = vectorizer.fit_transform(data[title_col])
-        
-        lda = LatentDirichletAllocation(n_components=5, random_state=42)  # Using 5 topics as an example
-        lda_topics = lda.fit_transform(title_matrix)
-        
-        # Add topic distributions to the DataFrame
-        topic_columns = [f'topic_{i}' for i in range(lda_topics.shape[1])]
-        lda_df = pd.DataFrame(lda_topics, columns=topic_columns)
-        data = pd.concat([data.reset_index(drop=True), lda_df], axis=1)
-        
         # Update progress
         progress_bar.progress(40)
         
@@ -78,47 +62,27 @@ if uploaded_file:
         for kw in data[keyword_col].unique():
             G.add_node(kw)
         
-        # Add edges based on weighted overlap, SERP similarity, and topic similarity
+        # Add edges based strictly on SERP overlap
         num_keywords = len(data[keyword_col].unique())
         for i, keyword1 in enumerate(data[keyword_col].unique()):
             keyword1_data = data[data[keyword_col] == keyword1]
             urls1 = keyword1_data[url_col].values.flatten()
             positions1 = keyword1_data[position_col].values.flatten()
-            serp_vector1 = keyword1_data['serp_vector'].values[0]
-            topic_dist1 = keyword1_data[topic_columns].values[0]
             
             for j, keyword2 in enumerate(data[keyword_col].unique()):
                 if i < j:
                     keyword2_data = data[data[keyword_col] == keyword2]
                     urls2 = keyword2_data[url_col].values.flatten()
                     positions2 = keyword2_data[position_col].values.flatten()
-                    serp_vector2 = keyword2_data['serp_vector'].values[0]
-                    topic_dist2 = keyword2_data[topic_columns].values[0]
                     
-                    # Calculate weighted overlap score
-                    overlap_score = 0
-                    for url, pos1 in zip(urls1, positions1):
-                        if url in urls2:
-                            pos2 = positions2[list(urls2).index(url)]
-                            if pos1 in range(1, 4) and pos2 in range(1, 4):
-                                overlap_score += 3  # High weight for positions 1-3
-                            elif pos1 in range(4, 7) and pos2 in range(4, 7):
-                                overlap_score += 2  # Medium weight for positions 4-6
-                            elif pos1 in range(7, 11) and pos2 in range(7, 11):
-                                overlap_score += 1  # Low weight for positions 7-10
+                    # Calculate overlap in top URLs
+                    overlap_count = sum(1 for url in urls1 if url in urls2 and 
+                                        positions1[list(urls1).index(url)] <= 5 and 
+                                        positions2[list(urls2).index(url)] <= 5)
                     
-                    # Calculate SERP vector similarity
-                    serp_similarity = np.dot(serp_vector1, serp_vector2) / (np.linalg.norm(serp_vector1) * np.linalg.norm(serp_vector2))
-                    
-                    # Calculate topic distribution similarity (cosine similarity)
-                    topic_similarity = np.dot(topic_dist1, topic_dist2) / (np.linalg.norm(topic_dist1) * np.linalg.norm(topic_dist2))
-                    
-                    # Combined score: sum of weighted overlap, SERP similarity, and topic similarity
-                    combined_score = overlap_score + serp_similarity + topic_similarity
-                    
-                    # Add edge if the combined score is positive
-                    if combined_score > 0:
-                        G.add_edge(keyword1, keyword2, weight=combined_score)
+                    # Add edge if the overlap count meets the threshold
+                    if overlap_count >= overlap_threshold:
+                        G.add_edge(keyword1, keyword2, weight=overlap_count)
             
             # Update progress
             progress_bar.progress(40 + int((i / num_keywords) * 40))
@@ -130,13 +94,13 @@ if uploaded_file:
             # Add cluster labels to the data
             data['cluster'] = data[keyword_col].map(partition)
             
-            # Rename clusters based on most relevant keyword
+            # Rename clusters based on the keyword most relevant to others in its group
             cluster_names = {}
             for cluster_id in data['cluster'].unique():
                 cluster_data = data[data['cluster'] == cluster_id]
                 keywords_in_cluster = cluster_data[keyword_col].values
                 
-                # Calculate relevance within cluster by averaging combined scores
+                # Calculate relevance within cluster by averaging overlap scores
                 avg_similarities = []
                 for keyword1 in keywords_in_cluster:
                     avg_similarity = 0
@@ -147,7 +111,7 @@ if uploaded_file:
                             count += 1
                     avg_similarities.append((keyword1, avg_similarity / count if count > 0 else 0))
                 
-                # Select keyword with highest average similarity
+                # Select the keyword with the highest average similarity
                 top_keyword = max(avg_similarities, key=lambda x: x[1])[0]
                 cluster_names[cluster_id] = top_keyword
                 
@@ -160,7 +124,7 @@ if uploaded_file:
             st.session_state['data'] = data
             st.session_state['processed'] = True
         else:
-            st.write('No clusters formed. Input data may need to be adjusted.')
+            st.write('No clusters formed. Adjust the overlap threshold or input data.')
             st.session_state['processed'] = False
 
     # Display the results if processed
