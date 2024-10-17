@@ -112,7 +112,7 @@ if uploaded_file:
 
             # Finalize cluster name and add to cluster list
             for keyword_set in new_cluster:
-                keyword_set['cluster_name'] = cluster_name
+                keyword_set['Cluster Name'] = cluster_name
                 processed_keywords.add(keyword_set[keyword_col].values[0])
 
             clusters.append(new_cluster)
@@ -126,10 +126,24 @@ if uploaded_file:
 
         # Convert clusters into a final DataFrame
         final_cluster_df = pd.concat([pd.concat(cluster) for cluster in clusters])
-        
-        # Final progress update
-        progress_bar.progress(100)
-        progress_message.text(f"Keywords left: {total_keywords - len(processed_keywords)}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
+
+        # Add URL and Title columns for each position
+        for pos in range(1, 4):
+            final_cluster_df[f'URL {pos}'] = final_cluster_df.apply(lambda row: row[url_col] if row[position_col] == pos else None, axis=1)
+            final_cluster_df[f'Title {pos}'] = final_cluster_df.apply(lambda row: row[title_col] if row[position_col] == pos else None, axis=1)
+
+        # Aggregate and clean up final DataFrame
+        final_cluster_df = final_cluster_df.groupby(['Cluster Name', keyword_col], as_index=False).agg({
+            search_volume_col: 'sum',
+            **{f'URL {pos}': 'first' for pos in range(1, 4)},
+            **{f'Title {pos}': 'first' for pos in range(1, 4)}
+        })
+
+        # Sort by total volume per cluster
+        cluster_volume = final_cluster_df.groupby('Cluster Name')[search_volume_col].sum().reset_index()
+        cluster_volume = cluster_volume.rename(columns={search_volume_col: 'Total Volume'})
+        final_cluster_df = final_cluster_df.merge(cluster_volume, on='Cluster Name')
+        final_cluster_df = final_cluster_df.sort_values(by='Total Volume', ascending=False).drop(columns=['Total Volume'])
 
         # Store processed data in session state
         st.session_state['data'] = final_cluster_df
@@ -137,7 +151,7 @@ if uploaded_file:
 
     # Display the results if processed
     if st.session_state['processed']:
-        st.write('Clustered keywords:', st.session_state['data'][[keyword_col, search_volume_col, 'cluster_name']])
+        st.write('Clustered keywords:', st.session_state['data'])
         
         # Download the clustered keywords as a CSV file
         st.download_button(
