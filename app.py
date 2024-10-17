@@ -23,7 +23,7 @@ if uploaded_file:
 
     # Field mapping
     keyword_col = st.selectbox('Select the Keyword column:', data.columns)
-    impression_col = st.selectbox('Select the Impression column:', data.columns)
+    search_volume_col = st.selectbox('Select the Search Volume column:', data.columns)
     position_col = st.selectbox('Select the Position column:', data.columns)
     url_col = st.selectbox('Select the SERP URL column:', data.columns)
     title_col = st.selectbox('Select the Title column:', data.columns)
@@ -77,7 +77,7 @@ if uploaded_file:
             unique_keywords_in_cluster = {}
             for keyword_set in new_cluster:
                 kw = keyword_set[keyword_col].values[0]
-                if kw not in unique_keywords_in_cluster or unique_keywords_in_cluster[kw][impression_col].sum() < keyword_set[impression_col].sum():
+                if kw not in unique_keywords_in_cluster or unique_keywords_in_cluster[kw][search_volume_col].sum() < keyword_set[search_volume_col].sum():
                     unique_keywords_in_cluster[kw] = keyword_set.iloc[0:1]  # Keep only the first row of the set
 
             new_cluster = list(unique_keywords_in_cluster.values())
@@ -88,7 +88,7 @@ if uploaded_file:
             for keyword_set in new_cluster:
                 serp_signature = tuple(sorted(keyword_set[url_col].values[:10]))  # Top 10 SERP results in any order
                 if serp_signature in seen_serp_signatures:
-                    if seen_serp_signatures[serp_signature][impression_col].sum() < keyword_set[impression_col].sum():
+                    if seen_serp_signatures[serp_signature][search_volume_col].sum() < keyword_set[search_volume_col].sum():
                         keywords_to_remove.add(seen_serp_signatures[serp_signature][keyword_col].values[0])
                         seen_serp_signatures[serp_signature] = keyword_set
                     else:
@@ -137,7 +137,7 @@ if uploaded_file:
 
     # Display the results if processed
     if st.session_state['processed']:
-        st.write('Clustered keywords:', st.session_state['data'][[keyword_col, impression_col, 'cluster_name']])
+        st.write('Clustered keywords:', st.session_state['data'][[keyword_col, search_volume_col, 'cluster_name']])
         
         # Download the clustered keywords as a CSV file
         st.download_button(
