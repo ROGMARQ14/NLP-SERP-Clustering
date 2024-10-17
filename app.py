@@ -120,9 +120,9 @@ if uploaded_file:
             # Update progress
             keyword_sets_processed += 1
             remaining_keywords = total_keywords - len(processed_keywords)
-            progress_percent = min(int((keyword_sets_processed / total_keywords) * 100), 100)
+            progress_percent = min(int((len(processed_keywords) / total_keywords) * 100), 100)
             progress_bar.progress(progress_percent)
-            progress_message.text(f"Keywords left: {remaining_keywords}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
+            progress_message.text(f"Clustering complete. Keywords left: {remaining_keywords}. Duplicates removed: {duplicates_removed}. Clusters: {len(clusters)}")
 
         # Convert clusters into a final DataFrame
         final_cluster_df = pd.concat([pd.concat(cluster) for cluster in clusters])
