@@ -129,8 +129,8 @@ if uploaded_file:
 
         # Add URL and Title columns for each position
         for pos in range(1, 4):
-            final_cluster_df[f'URL {pos}'] = final_cluster_df.apply(lambda row: row[url_col] if row[position_col] == pos else None, axis=1)
-            final_cluster_df[f'Title {pos}'] = final_cluster_df.apply(lambda row: row[title_col] if row[position_col] == pos else None, axis=1)
+            final_cluster_df[f'URL {pos}'] = final_cluster_df.groupby(['Cluster Name', keyword_col])[url_col].transform(lambda x: x.iloc[pos - 1] if len(x) >= pos else None)
+            final_cluster_df[f'Title {pos}'] = final_cluster_df.groupby(['Cluster Name', keyword_col])[title_col].transform(lambda x: x.iloc[pos - 1] if len(x) >= pos else None)
 
         # Aggregate and clean up final DataFrame
         final_cluster_df = final_cluster_df.groupby(['Cluster Name', keyword_col], as_index=False).agg({
