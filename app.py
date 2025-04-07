@@ -5,7 +5,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sentence_transformers import SentenceTransformer
 
 # Initialize the model for title similarity
-model = SentenceTransformer("paraphrase-MiniLM-L3-v2")
+model = SentenceTransformer("./all-MiniLM-L6-v2-local")
 
 # Initialize session state for data and processing status
 if 'data' not in st.session_state:
