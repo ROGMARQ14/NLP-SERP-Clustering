@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sentence_transformers import SentenceTransformer
-
 # from sentence_transformers import SentenceTransformer  ← not used
 
 
